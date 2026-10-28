@@ -1,0 +1,6 @@
+{
+  "name": "Neural workflow",
+  "description": "Stage constraints and an evidence ledger for neural-network research: the runtime tells you what is ready next, and blocks progress that has no upstream evidence.",
+  "panel": "Neural flow",
+  "view": "Workflow"
+}

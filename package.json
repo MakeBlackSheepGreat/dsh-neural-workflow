@@ -1,0 +1,58 @@
+{
+  "name": "dsh-neural-workflow",
+  "version": "0.1.0",
+  "description": "Neural-network research workflow constraints for DeepSeek Harness: a stage graph, an evidence ledger folded from the session log, and a Rust middleware that blocks out-of-order progress.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "MakeBlackSheepGreat",
+  "icon": "icon.svg",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "locale",
+    "icon.svg"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.0-rc.2 || >=0.2.1-rc.2"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/build.mjs --check && node scripts/check.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "native": "bash native/build.sh"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "neural-network",
+    "workflow",
+    "research",
+    "constraints",
+    "rust"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MakeBlackSheepGreat/dsh-neural-workflow.git"
+  },
+  "homepage": "https://github.com/MakeBlackSheepGreat/dsh-neural-workflow#readme",
+  "bugs": {
+    "url": "https://github.com/MakeBlackSheepGreat/dsh-neural-workflow/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-slots", "@deepseek-ai/dsh-client-locale"]
+    }
+  }
+}

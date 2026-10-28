@@ -1,0 +1,16 @@
+# dsh-neural-workflow 的 bundle patch：宿主平面的一行。
+#
+# 宿主半必须声明在**补丁层**而不是随包默认：客户端的模块扫描只扫宿主 Loader 的行，
+# 行的主入口（lib/index.js）才是宿主半；`dsh.client` 让 web 端加载 lib/client.js 作为浏览器半。
+# 行名用**包名**（不是文件路径）：Loader 从组合自身的 base 解析它，也就是装进 profile 的那份包。
+
+- insert:
+    - id: neural-workflow
+      name: dsh-neural-workflow
+      config:
+        # 单次中间件请求的上限：超时就本次降级，不阻塞会话。
+        timeoutMs: 5000
+        # 冷读日志时的上限（投影不可用的兜底路径）。
+        eventsLimit: 5000
+        # 提示词段落的顺序：靠后，紧贴运行时上下文。
+        contextOrder: 900
