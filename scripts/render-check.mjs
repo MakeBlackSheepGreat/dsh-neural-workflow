@@ -153,6 +153,40 @@ for (const { meta } of registrations) {
   }
 }
 
+/**
+ * 标签回退：字典还没就绪时 `t` 会抛/返回空。侧栏行拿不到 label 就不渲染，
+ * 所以这里**故意**把 t 换成会抛的实现，验证 label thunk 仍返回非空字符串。
+ */
+const throwingRegistrations = []
+const throwingCtx = {
+  effect: (factory) => factory(),
+  locale: {
+    register: () => () => {},
+    bind: () => () => {
+      throw new Error('locale not ready')
+    },
+  },
+  slots: {
+    inject: (name, factory) => factory(),
+    register: (meta) => {
+      throwingRegistrations.push(meta)
+      return () => {}
+    },
+  },
+}
+moduleExports.apply(throwingCtx)
+for (const meta of throwingRegistrations) {
+  if (typeof meta.label !== 'function') continue
+  try {
+    const label = meta.label()
+    if (typeof label !== 'string' || label === '') {
+      problems.push(`字典不可用时 ${meta.name} 的 label 为空（侧栏会整行消失）`)
+    }
+  } catch (error) {
+    problems.push(`字典不可用时 ${meta.name} 的 label 抛错：${error?.message ?? error}`)
+  }
+}
+
 if (problems.length > 0) {
   for (const problem of problems) console.error(`render-check: ${problem}`)
   process.exit(1)
