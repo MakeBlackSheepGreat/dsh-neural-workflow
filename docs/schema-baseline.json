@@ -26,7 +26,7 @@
         "layer": "L3",
         "kinds": [
           "figure",
-          "note"
+          "visual_check"
         ]
       },
       "infer": {
@@ -41,6 +41,13 @@
         "kinds": [
           "draft",
           "note"
+        ]
+      },
+      "review": {
+        "layer": "L3",
+        "kinds": [
+          "note",
+          "review"
         ]
       },
       "scope": {
@@ -87,7 +94,8 @@
       "develop->train",
       "figure->polish",
       "infer->validate",
-      "polish->submit",
+      "polish->review",
+      "review->submit",
       "scope->develop",
       "train->infer",
       "validate->conclude",
@@ -137,9 +145,11 @@
       "log",
       "note",
       "result",
+      "review",
       "run",
       "submission",
-      "test"
+      "test",
+      "visual_check"
     ],
     "auditKind": "failure"
   }

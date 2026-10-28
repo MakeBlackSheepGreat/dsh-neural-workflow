@@ -1,16 +1,38 @@
-# dsh-neural-workflow 的 bundle patch：宿主平面的一行。
+# dsh-neural-workflow 的 bundle patch：四个组件行（学 dsh-ops 的形态）。
 #
-# 宿主半必须声明在**补丁层**而不是随包默认：客户端的模块扫描只扫宿主 Loader 的行，
-# 行的主入口（lib/index.js）才是宿主半；`dsh.client` 让 web 端加载 lib/client.js 作为浏览器半。
-# 行名用**包名**（不是文件路径）：Loader 从组合自身的 base 解析它，也就是装进 profile 的那份包。
+# 同一个包，四个角色，可被 profile 单独开关：
+#   core（必需）     投影 + 工具 + 提示词 + 不变量 + 运行时服务（ctx.provide）
+#   panel            面板 HTTP 面（/api/neural-workflow/*）
+#   kb               经验库能力服务（panel 的 /knowledge 按它降级，关掉时报 E_CAPABILITY）
+#   enforce（默认关） 真实工具调用上的 C3 回放守卫——判定仍只在 Rust 里，
+#                    这里只回放"判定已经说出来的违规"，绝不发明新判据。
+# panel / enforce 行经 inject('neuralWorkflow') 拿到同一份运行时：
+# 同一个 worker、同一份投影、同一个判定——第二份运行时是我们明确拒绝的事。
 
 - insert:
-    - id: neural-workflow
+    - id: neural-workflow-core
       name: dsh-neural-workflow
       config:
-        # 单次中间件请求的上限：超时就本次降级，不阻塞会话。
+        role: core
         timeoutMs: 5000
-        # 冷读日志时的上限（投影不可用的兜底路径）。
         eventsLimit: 5000
-        # 提示词段落的顺序：靠后，紧贴运行时上下文。
         contextOrder: 900
+        subagentProvider: spawn
+        budget:
+          maxStages: 6
+          maxWallMs: 2700000
+          maxConsecutiveNoProgress: 2
+    - id: neural-workflow-panel
+      name: dsh-neural-workflow
+      config:
+        role: panel
+    - id: neural-workflow-kb
+      name: dsh-neural-workflow
+      config:
+        role: kb
+    - id: neural-workflow-enforce
+      name: dsh-neural-workflow
+      disabled: true
+      config:
+        role: enforce
+        mode: deny
