@@ -2,23 +2,33 @@
 
 [![dsh-plugin](https://img.shields.io/badge/dsh-plugin-8A2BE2)](#) [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](#)
 
-A DeepSeek Harness plugin that puts the neural-network research workflow under **runtime constraint**: a stage graph, an evidence ledger folded from the session log, and a Rust middleware that blocks progress with no upstream evidence.
+[中文](README.zh.md) · **English**
 
-It is built from this repository's own skill (`skills/neural-paper-workflow/`), so the stages and gates in the graph are the ones the workflow actually enforces — not an invented checklist.
+A DeepSeek Harness plugin that puts the neural-network research workflow under **runtime constraint**: a stage graph, an evidence ledger folded from the session log, a lesson library of 611 recorded experiences, and a Rust middleware that blocks progress with no upstream evidence.
 
-## What it does
+Stages, gates and the lesson library come from this project's own skill (`skills/neural-paper-workflow/`), so what the graph enforces is what the workflow actually does — not an invented checklist.
 
-| Surface | What you get |
-| --- | --- |
-| **Panel icon** (`sidebar.panellist`) | One entry beside Plugins / Automation / Context Insights; opens the full-page board. |
-| **Board page** (`main`) | The stage graph with live node states, layer completion bars, the violation list, and the evidence ledger. |
-| **Workflow tab** (`conversation.view`) | The same board bound to the current session, beside Chat / Trajectory / Context. |
-| **`neural_flow` tool** | The model records evidence (`node` + `kind` + optional `anchors[].path`). The middleware validates *before* the record lands, so a rejected record comes back with the exact constraint that blocked it. |
-| **Runtime context** | A `systemPrompt` section states the current frontier and open violations, so the model knows what is ready next. |
+## Features
 
-Nothing is written to your workspace: the ledger lives in the session log, so it survives restarts, resumes, and compaction.
+### 1. Stage graph with runtime verdicts
 
-## The six constraints
+Ten stages across four layers, derived from the skill's 阶段编排:
+
+```
+L0 问题与设计   scope → develop
+L1 执行         train → infer → validate
+L2 证据与结论   conclude → write
+L3 表达与交付   figure → polish → submit
+```
+
+Every node declares evidence kinds, a required-anchor flag, and a gate description taken from the skill's 质量门. The middleware computes, on demand:
+
+- `satisfied` / `ready` / `blocked` per node, with the blocking upstream nodes named
+- per-layer completion
+- the **frontier**: which stages may be worked on right now
+- violations, each with its constraint code and a one-line diagnosis
+
+### 2. Six constraints (C1–C6)
 
 | Code | Rule |
 | --- | --- |
@@ -31,45 +41,88 @@ Nothing is written to your workspace: the ledger lives in the session log, so it
 
 A constraint that cannot find its evidence stays silent: a criterion narrower than the facts would produce false positives.
 
-## Install
+### 3. Evidence ledger
 
-```sh
-# build the native middleware (optional — the panel degrades to read-only without it)
-bash native/build.sh
+The ledger is not a database — it is a **projection of the session log**. The model records evidence with the `neural_flow` tool; the middleware validates it *before* it lands, and a rejected record comes back with the exact constraint that blocked it. Accepted evidence rides on the tool result, so it survives restart, resume, and compaction, and never pollutes the chat transcript with synthetic user messages.
 
-# from the DSH profile
-dsh plugin --profile desktop add /absolute/path/to/dsh-neural-workflow
-```
+### 4. Lesson library (611 entries)
 
-Or install the directory through the Harness plugin manager (`install_bundle` with this package directory as the target).
+The whole `skills/neural-paper-workflow/knowledge/graph` is compiled into the plugin at build time:
 
-## Layout
+| Kind | Count | What it is |
+| --- | --- | --- |
+| `idea` | 567 | Idea/experiment recipes: how to do ablation, calibration, leakage checks, figure work |
+| `error` | 28 | Known errors with root cause, forbidden actions, and verification commands |
+| `experiment` | 10 | Experiment design patterns |
+| `perf`, `writing` | 6 | Performance and writing lessons |
+
+Two-step retrieval, matching how the skill's own engine works:
+
+1. `neural_flow` with `action: "knowledge", query: "<symptom>"` → scored matches with a gist
+2. `action: "knowledge", entry: "NP002"` → full entry (root cause, approach, command, forbid list)
+
+Scoring is deliberate and explainable: title hits weigh 3, body hits 1, full-phrase-in-title +2, multiplied by severity (`critical` 3, `major` 2). Zero-score entries are dropped rather than returned as "maybe relevant" noise.
+
+### 5. Three UI surfaces
+
+Placed exactly where dsh-context puts its own — same slots, adjacent order:
+
+| Surface | Slot | What you get |
+| --- | --- | --- |
+| Sidebar icon | `sidebar.panellist` (order 25) | Entry beside Plugins / Automation / Context Insights |
+| Board page | `main` | Stage graph, layer bars, violations, ledger, lesson search |
+| Session tab | `conversation.view` (order 25) | The same board bound to the current session |
+
+Styling uses only theme tokens (`--dsw-alias-*`), so light and dark both work.
+
+### 6. Runtime context
+
+A `systemPrompt` section states the current progress, the frontier, and any open violations — so the model knows what is ready next without being told.
+
+## Architecture
 
 ```
 graph/neural-paper-workflow.json   the stage graph (data — edit this, not the code)
 native/                            Rust middleware: the ONLY constraint interpreter
-lib/index.js                       host half: projection, tool, prompt section, HTTP routes
-lib/client.js                      browser half: sidebar entry, page, conversation view
+lib/index.js                       host: projection, tool, prompt section, HTTP routes
+lib/client.js                      browser: sidebar icon, page, session view, lesson search
 lib/fold.js                        the single authoritative ledger fold (pure)
-PROTOCOL.md                        the host ↔ middleware wire contract
+lib/kb.js                          lesson retrieval (pure, explainable scoring)
+scripts/build-kb.mjs               skills knowledge graph → lib/kb-data.js + lib/kb-full.js
+PROTOCOL.md                        host ↔ middleware wire contract
 ```
 
-## Design
+Three design rules are copied deliberately, and one thing is avoided.
 
-Two lessons are copied deliberately, and one is deliberately avoided.
+**From clearAI** — state has exactly one authority. `lib/fold.js` folds the session log; the projection, the tool, the panel and the prompt section all read that one fold. There is no second index to drift.
 
-**From clearAI** — state has exactly one authority. `lib/fold.js` folds the session log; the projection, the tool, the panel and the prompt section all read that one fold. There is no second index to drift out of sync.
+**From dsh-ops** — the native worker is a managed subprocess with a line protocol, an explicit `selftest`, and an honest degraded mode. And the constraint judgement lives *only* in Rust: the host never re-implements it in JS, because a second interpreter is guaranteed to diverge. When the binary is missing the panel says so instead of silently substituting a different answer.
 
-**From dsh-ops** — the native worker is a managed subprocess with a line protocol, honest provenance checks, and an explicit degraded mode. And the constraint judgement lives *only* in Rust: the host half never re-implements it in JS, because a second interpreter is guaranteed to diverge. When the binary is missing, the panel says so instead of silently substituting a different answer.
+**From Veyra** — knowledge is evidence-anchored and reused across sessions rather than re-derived. Here that shows up as `anchors[].path` on evidence, a ledger durable by construction, and a lesson library compiled from what earlier sessions already learned.
 
-**From Veyra** — memory is evidence-anchored and reused across sessions rather than re-derived; here that surfaces as `anchors[].path` on evidence and a ledger that is durable by construction.
+**Avoided** — no scoring heuristics pretending to be judgement. Every number the panel shows comes from either the Rust verdict or a deterministic fold.
+
+## Install
+
+```sh
+# 1. build the lesson library from the skill (already committed, rerun when the skill changes)
+node scripts/build-kb.mjs
+
+# 2. build the native middleware (optional — the panel degrades to read-only without it)
+bash native/build.sh
+
+# 3. install into a profile
+dsh plugin --profile desktop add /absolute/path/to/dsh-neural-workflow
+```
 
 ## Verify
 
 ```sh
-node scripts/build.mjs --check   # graph is consistent and lib/graph-data.js is current
-node scripts/check.mjs           # syntax, bundle shape, slot names, manifest
-node --test tests/*.test.mjs     # fold determinism + middleware contract (16 tests)
+node scripts/build.mjs --check       # graph consistent, lib/graph-data.js current
+node scripts/build-kb.mjs --check    # lesson index current with the skill
+node scripts/check.mjs               # syntax, bundle shape, slot names, manifest
+node scripts/render-check.mjs        # every registered component renders without throwing
+node --test tests/*.test.mjs         # fold determinism + middleware contract (17 tests)
 ```
 
 ## License
