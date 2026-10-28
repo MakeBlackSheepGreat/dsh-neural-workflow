@@ -1,0 +1,146 @@
+{
+  "graph": {
+    "layers": [
+      "L0",
+      "L1",
+      "L2",
+      "L3"
+    ],
+    "nodes": {
+      "conclude": {
+        "layer": "L2",
+        "kinds": [
+          "claim",
+          "note"
+        ]
+      },
+      "develop": {
+        "layer": "L0",
+        "kinds": [
+          "code",
+          "note",
+          "test"
+        ]
+      },
+      "figure": {
+        "layer": "L3",
+        "kinds": [
+          "figure",
+          "note"
+        ]
+      },
+      "infer": {
+        "layer": "L1",
+        "kinds": [
+          "log",
+          "run"
+        ]
+      },
+      "polish": {
+        "layer": "L3",
+        "kinds": [
+          "draft",
+          "note"
+        ]
+      },
+      "scope": {
+        "layer": "L0",
+        "kinds": [
+          "baseline",
+          "hypothesis",
+          "note"
+        ]
+      },
+      "submit": {
+        "layer": "L3",
+        "kinds": [
+          "completion",
+          "submission"
+        ]
+      },
+      "train": {
+        "layer": "L1",
+        "kinds": [
+          "log",
+          "note",
+          "run"
+        ]
+      },
+      "validate": {
+        "layer": "L1",
+        "kinds": [
+          "ablation",
+          "note",
+          "result"
+        ]
+      },
+      "write": {
+        "layer": "L2",
+        "kinds": [
+          "draft",
+          "note"
+        ]
+      }
+    },
+    "edges": [
+      "conclude->write",
+      "develop->train",
+      "figure->polish",
+      "infer->validate",
+      "polish->submit",
+      "scope->develop",
+      "train->infer",
+      "validate->conclude",
+      "write->figure"
+    ]
+  },
+  "protocol": {
+    "ops": [
+      "evaluate",
+      "selftest"
+    ],
+    "errorCodes": [
+      "E_INPUT",
+      "E_JSON",
+      "E_OP"
+    ],
+    "constraints": [
+      "C1",
+      "C2",
+      "C3",
+      "C4",
+      "C5",
+      "C6"
+    ]
+  },
+  "evidence": {
+    "fields": [
+      "anchors",
+      "at",
+      "id",
+      "kind",
+      "node",
+      "note",
+      "seq"
+    ]
+  },
+  "vocabulary": {
+    "kinds": [
+      "ablation",
+      "baseline",
+      "claim",
+      "code",
+      "completion",
+      "draft",
+      "figure",
+      "hypothesis",
+      "log",
+      "note",
+      "result",
+      "run",
+      "submission",
+      "test"
+    ],
+    "auditKind": "failure"
+  }
+}

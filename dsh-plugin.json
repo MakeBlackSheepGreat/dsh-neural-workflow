@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/T-Auto/dsh-std/8a15541117cb3c13ddb8f2468308691b6051d162/packages/manifest/schema/dsh-plugin-0.15.schema.json",
+  "manifestVersion": "0.15",
+  "id": "dsh-neural-workflow",
+  "name": "dsh-neural-workflow",
+  "version": "0.2.0",
+  "description": "Neural-network research workflow constraints for DeepSeek Harness: stage graph, evidence ledger folded from the session log, 611-lesson library, and a Rust middleware that blocks out-of-order progress.",
+  "license": "Apache-2.0",
+  "facets": {
+    "host": {
+      "entry": "lib/index.js",
+      "apiVersion": "v1alpha1"
+    }
+  },
+  "requires": {
+    "contracts": [
+      { "apiVersion": "tools.dsh/v1alpha1", "kind": "Tool" },
+      { "apiVersion": "session-projection.dsh/v1alpha1", "kind": "Projection" }
+    ]
+  },
+  "permissions": [
+    {
+      "name": "dsh-neural-workflow.process.spawn",
+      "scope": "subprocess",
+      "reason": "Spawn the fixed, package-local nw-constrain worker that judges evidence against the stage graph; no other executable is launched."
+    },
+    {
+      "name": "dsh-neural-workflow.fs.read",
+      "scope": "filesystem-read",
+      "reason": "Read the worker binary and the compiled lesson library for provenance and capability reporting."
+    }
+  ],
+  "contributes": {
+    "x-display": [
+      {
+        "name": "神经工作流",
+        "nameEn": "Neural workflow",
+        "icon": "icon.svg",
+        "tagline": "阶段约束 · 证据账本 · 经验库",
+        "taglineEn": "Stage constraints · evidence ledger · lesson library"
+      }
+    ]
+  }
+}

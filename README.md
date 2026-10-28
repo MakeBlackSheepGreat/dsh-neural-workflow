@@ -79,7 +79,36 @@ Styling uses only theme tokens (`--dsw-alias-*`), so light and dark both work.
 
 A `systemPrompt` section states the current progress, the frontier, and any open violations — so the model knows what is ready next without being told.
 
+### 7. Experience ledger with a trust ladder
+
+Lessons learned while working are stored per project under `$DSH_HOME/neural-workflow/projects/<key>/experience.ndjson` — append-only, never inside your repository.
+
+| Standing | How it is reached | Effect |
+| --- | --- | --- |
+| `candidate` | a new record | visible, but never auto-recalled into the prompt |
+| `derived` | 2 successful applications, or a human promote | auto-recalled for its stage |
+| `canonical` | **only** `promote(id, 'canonical', { explicit: true })` | project truth |
+
+A failed application demotes `derived` back to `candidate`; canonical only keeps the history. Contradictory records stay visible side by side and are never auto-merged. `recurrence()` clusters the same root cause across records.
+
+### 8. Vocabulary, not bare strings
+
+`lib/vocab.js` validates `node` and `kind` against the graph and returns the nearest candidates on a typo (`hypothesys` → `hypothesis`). It only ever *rejects more*, never accepts something the middleware would reject — the judgement stays in Rust.
+
+### 9. Failure admission
+
+`kind: "failure"` records a failure that already happened. It is always admissible and never satisfies a node: failures are facts, not evidence.
+
+### 10. Dispatch plan
+
+`action: "plan"` picks the next stage from the verdict, attaches the matching lessons and the real gate commands (`check_leakage.py`, `calibration_gate.py`, …) from the skill, and stops with a reason when the frontier is empty or the budget is spent.
+
+### 11. Contract baseline
+
+`docs/schema-baseline.json` + `scripts/check-release.mjs` freeze the shapes others depend on — graph nodes/kinds, wire ops and error codes, evidence fields, accepted kinds — and fail the build when they drift.
+
 ## Architecture
+
 
 ```
 graph/neural-paper-workflow.json   the stage graph (data — edit this, not the code)
@@ -87,6 +116,9 @@ native/                            Rust middleware: the ONLY constraint interpre
 lib/index.js                       host: projection, tool, prompt section, HTTP routes
 lib/client.js                      browser: sidebar icon, page, session view, lesson search
 lib/fold.js                        the single authoritative ledger fold (pure)
+lib/experience.js                  per-project experience ledger (trust ladder, feedback, recurrence)
+lib/executor.js                    dispatch plan, budget stop conditions, anchor checks
+lib/vocab.js                       node/kind vocabulary with typo candidates
 lib/kb.js                          lesson retrieval (pure, explainable scoring)
 scripts/build-kb.mjs               skills knowledge graph → lib/kb-data.js + lib/kb-full.js
 PROTOCOL.md                        host ↔ middleware wire contract

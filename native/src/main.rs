@@ -16,6 +16,9 @@ const CODE_EVIDENCE_UNANCHORED: &str = "C4";
 const CODE_UNSUPPORTED_COMPLETION: &str = "C5";
 const CODE_EMPTY_EVIDENCE: &str = "C6";
 
+/// 审计事实：任何节点都接受，不参与满足度。
+const FAILURE_KIND: &str = "failure";
+
 fn as_str(value: &Value, key: &str) -> String {
     value
         .get(key)
@@ -82,6 +85,8 @@ struct Tally {
     kinds: Vec<String>,
     anchored: bool,
     count: usize,
+    /// 失败审计事实的条数：**不参与满足度**（失败不是证据），但必须允许入账。
+    failures: usize,
 }
 
 impl Tally {
@@ -209,6 +214,20 @@ pub fn evaluate(graph: &Value, evidence: &[Value], now: &str) -> Value {
         };
         let node = &nodes[target];
 
+        // ── 审计事实：失败必须允许入账（clearAI 纪律）────────────────────────
+        //
+        // 「已经发生的失败必须允许入账」：评估者崩溃、门禁没过、实验失败都是**事实**。
+        // 拦下它们等于要求"只允许好看的事实进入账本"——那本身才是不实陈述。
+        //
+        // 所以 `kind:"failure"` 只过 C1（节点存在）与 C6（字段完整），
+        // 跳过 C2（种类）/C3（越序）/C4（锚点）/C5（终局）——
+        // 一次失败的实验不会因为"顺序不对"就不曾发生。
+        // 但它**不增加满足度**：失败不是证据，节点不会因为失败而变绿。
+        if kind == FAILURE_KIND {
+            tallies[target].failures += 1;
+            continue;
+        }
+
         // C2：节点只接受它声明的证据种类。
         if !node.kinds.is_empty() && !node.kinds.iter().any(|item| item == &kind) {
             violations.push(Violation::new(
@@ -322,6 +341,7 @@ pub fn evaluate(graph: &Value, evidence: &[Value], now: &str) -> Value {
                 "kinds": tallies[position].kinds.clone(),
                 "anchored": tallies[position].anchored,
                 "evidence": tallies[position].count,
+                "failures": tallies[position].failures,
                 "blockedBy": blockers,
             }),
         );
@@ -466,6 +486,20 @@ pub fn selftest() -> Value {
     check(
         "C6 空证据被拒",
         empty_evidence["violations"][0]["code"] == json!(CODE_EMPTY_EVIDENCE),
+    );
+
+    // 失败必须能入账：越序 + 未满足的节点上记 failure，仍然 0 违规，且不增加满足度。
+    let failure = evaluate(
+        &graph,
+        &[json!({ "id": "e1", "node": "conceive", "kind": "failure", "note": "run crashed" })],
+        "t",
+    );
+    check("失败事实允许入账", failure["ok"] == json!(true));
+    check(
+        "失败不增加满足度",
+        failure["nodes"]["conceive"]["state"] == json!("blocked")
+            && failure["nodes"]["conceive"]["failures"] == json!(1)
+            && failure["progress"]["satisfied"] == json!(0),
     );
 
     let happy = evaluate(
