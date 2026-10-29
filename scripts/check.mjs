@@ -37,7 +37,7 @@ function syntaxCheck(relative) {
 }
 
 // ── 1. 语法 ────────────────────────────────────────────────────────────────
-for (const relative of ['lib/index.js', 'lib/fold.js', 'lib/graph.js', 'lib/graph-data.js', 'lib/brief.js', 'lib/constraints.js', 'lib/client.js']) {
+for (const relative of ['lib/index.js', 'lib/fold.js', 'lib/graph.js', 'lib/graph-data.js', 'lib/brief.js', 'lib/constraints.js', 'lib/client.js', 'lib/figure.js', 'lib/retrieval.js', 'lib/kb-graph.js']) {
   syntaxCheck(relative)
 }
 

@@ -119,6 +119,26 @@ A failed application demotes `derived` back to `candidate`; canonical only keeps
 
 `docs/schema-baseline.json` + `scripts/check-release.mjs` freeze the shapes others depend on — graph nodes/kinds, wire ops and error codes, evidence fields, accepted kinds — and fail the build when they drift.
 
+### 11b. Figure audit as a tool, not a judgement
+
+`figure_audit` runs the project's five deterministic figure checkers — structure,
+semantics, geometry, quality, rendering — and returns one merged report. It is a
+separate tool from `neural_flow` because the input domain is different: one
+operates on workflow state, the other on a file on disk.
+
+Two failure modes had to be handled before this could be honest, both found by
+running the checkers rather than reading them:
+
+| What the checker does | Why it lies | What the tool does |
+| --- | --- | --- |
+| `check_figure_rendering` with no draw.io CLI returns `status=PASS, score=100`, every check `SKIP` | A pass that inspected nothing | Downgrades to `SKIPPED` with the missing dependency named; contributes no `PASS` row |
+| `check_figure_geometry` / `check_figure_quality` exit 1 *when they find defects*, with valid JSON on stdout | Treating a non-zero exit as a crash deletes the very defects you need to see | Parses stdout first; the exit code becomes a per-check annotation, not the verdict |
+
+Formats are declared by what can actually be checked: `.drawio` gets all five,
+`.pdf` gets geometry only (print-font floor), bitmaps and `.svg` get none because
+every structural check needs the XML model. A missing checker directory is
+reported as "no checks ran", never as "no problems found".
+
 ### 12. Read-only UI, tool-only operations
 
 The panel **visualises**; it never mutates. There is no write route and no action
