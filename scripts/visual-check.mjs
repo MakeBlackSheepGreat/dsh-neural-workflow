@@ -219,6 +219,22 @@ const DICT = {
   viewList: '列表',
   viewGraph: '图',
   runs: '阶段运行',
+  // 准入卡片与蛛网的文案：缺了它们面板会显示原始键名，截图就不诚实了。
+  admission: '经验准入',
+  admissionHint: '本轮进入请求的经验，以及为什么',
+  reasonConfirmed: '上下文确认',
+  reasonVerified: '有验证命令',
+  reasonCited: '有引文',
+  reasonSourced: '有来源事件',
+  reasonFloor: '支撑不足',
+  reasonBudget: '超预算',
+  reasonInvalid: '条目无效',
+  entries: '条',
+  links: '条连接',
+  fit: '适应',
+  web: '蛛网',
+  search: '检索',
+  hiddenHint: '另有 {n} 条未显示，点类别名展开',
   runsNone: '还没有派发过阶段。',
   runsUnavailable: '运行登记不可用',
   runOk: '完成',
@@ -235,12 +251,36 @@ body{margin:0;font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif;back
  * 用于第一趟量宽度；给了数字才真正渲染 Board。
  */
 // Web 组件自己 fetch 结构；这里让它拿到真数据。
+/**
+ * 取数桩：视觉检查里没有宿主，所以把每张异步卡片的**真实数据形状**喂进去。
+ * 只喂 {ok:false} 会让卡片永远停在错误行，那等于没检查它的排版。
+ */
+const ADMISSION_FIXTURE = {
+  ok: true,
+  admission: {
+    summary: '准入 3 条（812/4000 字），淘汰 21 条；其中 1 条由上下文正则确认；淘汰原因：支撑不足 20、超预算 1。',
+    counts: { candidates: 24, admitted: 3, rejected: 21, confirmed: 1, byRole: { hazard: 2, procedure: 1 }, bySupport: { cited: 2, sourced: 1 }, excludedBy: { support_below_floor: 20, over_budget: 1 } },
+    used: 812,
+    budget: 4000,
+    admitted: [
+      { id: 'NP001', title: '多比较膨胀：多假设未校正把噪声当信号', role: 'hazard', support: 'cited', reason: 'has_citation', stageFit: 'mismatch', confirmed: false },
+      { id: 'NP027', title: '梯度检查点：显存换时间的取舍', role: 'procedure', support: 'cited', reason: 'has_verification_command', stageFit: 'exact', confirmed: true, evidence: 'p<0.05' },
+      { id: 'NP003', title: '外部队列验证：伪标签微调后复核', role: 'hazard', support: 'sourced', reason: 'has_source_event', stageFit: 'unset', confirmed: false },
+    ],
+    rejected: [],
+  },
+}
+
 globalThis.fetch = (url) =>
   Promise.resolve({
     ok: true,
     json: () =>
       Promise.resolve(
-        String(url).includes('/knowledge') ? { ok: true, graph: kbGraphData() } : { ok: false },
+        String(url).includes('/knowledge')
+          ? { ok: true, graph: kbGraphData() }
+          : String(url).includes('/admission')
+            ? ADMISSION_FIXTURE
+            : { ok: false },
       ),
   })
 
@@ -296,6 +336,12 @@ function buildHtml(stageWidth, canvasWidth) {
             reactStub.createElement('div', { className: 'nw-card' }, internals.Violations({ verdict, t, lang: 'zh', constraints: [] })),
             reactStub.createElement('div', { className: 'nw-card' }, internals.LayerBars({ graph: GRAPH, verdict, t, lang: 'zh' })),
             reactStub.createElement('div', { className: 'nw-card' }, internals.Runs({ runs: RUNS, error: undefined, t, lang: 'zh' })),
+            reactStub.createElement(
+              'div',
+              { className: 'nw-card' },
+              // 直接渲染 AdmissionView + 真形状：Admission 自己 fetch，桩里 useEffect 是空函数。
+              internals.AdmissionView({ t, admission: ADMISSION_FIXTURE.admission, error: undefined, pending: false }),
+            ),
             reactStub.createElement(
               'div',
               { className: 'nw-card' },

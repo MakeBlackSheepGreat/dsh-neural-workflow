@@ -119,6 +119,51 @@ A failed application demotes `derived` back to `candidate`; canonical only keeps
 
 `docs/schema-baseline.json` + `scripts/check-release.mjs` freeze the shapes others depend on — graph nodes/kinds, wire ops and error codes, evidence fields, accepted kinds — and fail the build when they drift.
 
+### 11c. Which lessons enter the request, and why
+
+The stage brief carries lessons from a 613-entry library. Until now, selection was
+BM25 top 6 plus a substring match, emitting `{id, title}` — no admission criterion,
+no reason. Measured on the real library, that treated three very different kinds of
+claim as equals:
+
+| support | count | meaning |
+| --- | --- | --- |
+| cited | 102 | has external citations |
+| sourced | 496 | traceable to a source event, no external citation |
+| bare | 15 | assertion only |
+
+Two library fields look like filters and are not: `status` is `formal` for all 613
+entries, and `stage` puts 572 of them in `conception`. The `stage` tag is worse than
+useless as a gate — reverse-checking by content, **172 of 182 entries that are
+clearly about training are tagged `conception`** (validation 123/136, writing 21/24
+likewise). It is an unpopulated default, so gating on it kills entries at random.
+
+So `lib/admission.js` decides admission by criterion, not by score, on two
+independent axes:
+
+- **role** — `hazard` 28 / `procedure` 35 / `guidance` 549 / `principle` 1. Role
+  changes how a lesson enters: a hazard must be read first as a warning, a
+  procedure as steps.
+- **support** — how it is backed. Independent of role; a matched regex says the
+  *problem* is detectable, not that the *advice* is true.
+
+Admission has exactly two channels: traceable support, or checkability
+(`verification_cmd` — running it tells you if the advice holds). A bare assertion
+enters only if its `prescan_pattern` actually matches the current evidence
+ledger — formal confirmation, not similarity. Every candidate, admitted or not,
+leaves `{reason, stageFit}`, and exclusion reasons are enumerable constants rather
+than prose, so they can be counted and tested.
+
+One narrow path is declared as narrow: of 593 entries carrying the
+`prescan_pattern` key only **22 hold a non-empty pattern**, and 3 of those are
+double-escaped data defects that compile but match a literal backslash. `19 usable
+signatures, 3.1%`. The detection predicate must be *two consecutive backslashes* —
+using "contains any backslash" flags every legitimate `\s` / `\.` / `\{` as broken.
+
+`plan` and `run` now share one `admitLessons` path, so the lessons in a plan and
+the lessons at execution are the same set. The report rides back on the tool result
+and is visible in the side panel.
+
 ### 11b. Figure audit as a tool, not a judgement
 
 `figure_audit` runs the project's five deterministic figure checkers — structure,
