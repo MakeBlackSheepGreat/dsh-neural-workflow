@@ -9,8 +9,6 @@ on:
 permissions:
   contents: write # softprops/action-gh-release 需要写 Release
 
-env:
-
 jobs:
   release:
     name: verify + pack + release
