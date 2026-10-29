@@ -10,8 +10,6 @@ permissions:
   contents: write # softprops/action-gh-release 需要写 Release
 
 env:
-  SKILL_REPO: https://github.com/MakeBlackSheepGreat/Neural_Paper_Skill.git
-  SKILL_SHA: 51b4cd002bb52f6c61fcf311af840291cda51e9b
 
 jobs:
   release:
@@ -68,15 +66,14 @@ jobs:
           echo "DSH_CHROME_PATH=$CHROME" >> "$GITHUB_ENV"
           "$CHROME" --version
 
-      - name: fetch skill knowledge base
+      # 知识库的源在**另一个私有仓库**里，干净 runner 上没有、匿名也 clone 不到
+      # （实测 `could not read Username for 'https://github.com'`）。
+      # 所以这里不拉源：`node scripts/build-kb.mjs --check` 会在源缺席时
+      # 明确降级为"产物自洽校验"，并把降级本身打印到日志里——不硬失败、也不假绿。
+      # 想在 CI 里做与源的逐字比对，就得给这个仓配 deploy key 并设 NEURAL_PAPER_SKILL。
+      - name: note knowledge base source
         run: |
-          set -euo pipefail
-          git clone -q --filter=blob:none "$SKILL_REPO" "$RUNNER_TEMP/skill"
-          git -C "$RUNNER_TEMP/skill" checkout -q "$SKILL_SHA"
-          echo "checked out $(git -C "$RUNNER_TEMP/skill" rev-parse HEAD)"
-          SKILL_DIR="$RUNNER_TEMP/skill/skills/neural-paper-workflow"
-          test -d "$SKILL_DIR/knowledge/graph" || { echo "::error::知识图谱目录不存在：$SKILL_DIR"; exit 1; }
-          echo "NEURAL_PAPER_SKILL=$SKILL_DIR" >> "$GITHUB_ENV"
+          echo "::notice::知识库源在私有仓，CI 只做产物自洽校验；与源逐字比对需 deploy key + NEURAL_PAPER_SKILL"
 
       - name: build native middleware
         run: cargo build --release --manifest-path native/Cargo.toml

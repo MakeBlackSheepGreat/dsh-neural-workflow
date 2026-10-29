@@ -13,11 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 知识库的源在**另一个仓库**里（scripts/build-kb.mjs 默认找 ../Neural_Paper_Skill）。
-  # 固定到具体 SHA：跟着 main 走会让本仓 CI 因为兄弟仓的一次提交突然变红。
-  # 这个 SHA 产出的 611 条与仓库里已提交的 lib/kb-data.js 一致。
-  SKILL_REPO: https://github.com/MakeBlackSheepGreat/Neural_Paper_Skill.git
-  SKILL_SHA: 51b4cd002bb52f6c61fcf311af840291cda51e9b
 
 jobs:
   check:
@@ -56,19 +51,14 @@ jobs:
           echo "DSH_CHROME_PATH=$CHROME" >> "$GITHUB_ENV"
           "$CHROME" --version
 
-      # build-kb.mjs 需要知识库源；干净的 runner 上没有兄弟仓，必须显式拉。
-      # 用 NEURAL_PAPER_SKILL 指过去（脚本原生支持这个变量），而不是伪造目录布局。
-      # 不拉的话 `npm run check` 会在 build-kb 这一步抛「找不到知识图谱目录」。
-      - name: fetch skill knowledge base
+      # 知识库的源在**另一个私有仓库**里，干净 runner 上没有、匿名也 clone 不到
+      # （实测 `could not read Username for 'https://github.com'`）。
+      # 所以这里不拉源：`node scripts/build-kb.mjs --check` 会在源缺席时
+      # 明确降级为"产物自洽校验"，并把降级本身打印到日志里——不硬失败、也不假绿。
+      # 想在 CI 里做与源的逐字比对，就得给这个仓配 deploy key 并设 NEURAL_PAPER_SKILL。
+      - name: note knowledge base source
         run: |
-          set -euo pipefail
-          git clone -q --filter=blob:none "$SKILL_REPO" "$RUNNER_TEMP/skill"
-          git -C "$RUNNER_TEMP/skill" checkout -q "$SKILL_SHA"
-          echo "checked out $(git -C "$RUNNER_TEMP/skill" rev-parse HEAD)"
-          SKILL_DIR="$RUNNER_TEMP/skill/skills/neural-paper-workflow"
-          test -d "$SKILL_DIR/knowledge/graph" || { echo "::error::知识图谱目录不存在：$SKILL_DIR"; exit 1; }
-          echo "knowledge graph entries: $(ls "$SKILL_DIR/knowledge/graph" | wc -l)"
-          echo "NEURAL_PAPER_SKILL=$SKILL_DIR" >> "$GITHUB_ENV"
+          echo "::notice::知识库源在私有仓，CI 只做产物自洽校验；与源逐字比对需 deploy key + NEURAL_PAPER_SKILL"
 
       # 先构建中间件，`npm test` 里的 6 条协议集成测试才不会因为缺二进制被跳过。
       # 跳过 = 假绿：那 6 条正是"宿主怎么调、中间件怎么答"的契约证明。
