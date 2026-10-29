@@ -3,7 +3,7 @@
   "manifestVersion": "0.15",
   "id": "dsh-neural-workflow",
   "name": "dsh-neural-workflow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Neural-network research workflow constraints for DeepSeek Harness: stage graph, evidence ledger folded from the session log, 611-lesson library, and a Rust middleware that blocks out-of-order progress.",
   "license": "Apache-2.0",
   "facets": {
