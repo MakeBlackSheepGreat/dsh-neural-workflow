@@ -95,11 +95,21 @@ jobs:
           echo "TGZ=$TGZ" >> "$GITHUB_ENV"
           echo "tarball: $TGZ"
 
+      # 注意不能用 `tar -tzf | grep -q`：grep -q 一匹配就关管道，
+      # tar 收到 SIGPIPE 打 `tar: stdout: write error`，在 pipefail 下整条管道
+      # 被判失败——即使文件明明在包里（实测 24 个文件里就有它）。
+      # 先落盘再查，就没有这个竞态。
       - name: verify tarball contains native binary
         run: |
           set -euo pipefail
-          tar -tzf "$TGZ" | grep -qx 'package/lib/native/nw-constrain' \
-            || { echo "::error::tarball 里没有 package/lib/native/nw-constrain"; exit 1; }
+          tar -tzf "$TGZ" > .tarball-list.txt
+          if ! grep -qx 'package/lib/native/nw-constrain' .tarball-list.txt; then
+            echo "::error::tarball 里没有 package/lib/native/nw-constrain"
+            grep -E 'lib/native' .tarball-list.txt || echo "（包里没有任何 lib/native 条目）"
+            exit 1
+          fi
+          echo "tarball 含 package/lib/native/nw-constrain"
+
 
       # 没有 NPM_TOKEN，所以不发布到 npm：只把 tgz 挂到 GitHub Release。
       - name: create release
