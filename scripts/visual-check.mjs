@@ -117,7 +117,24 @@ if (found === undefined) {
 const chrome = found.path
 
 const profileDir = join(outDir, '.chrome-profile')
-const chromeArgs = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profileDir}`]
+/**
+ * 无头 Chrome 的参数。
+ *
+ * `--no-sandbox` 在 Linux CI 上是**必需**的：容器里以受限命名空间运行，
+ * Chrome 的 sandbox 起不来会直接 SIGABRT（abort，不是普通退出码）。
+ * 本地 Windows/macOS 加了也无害，所以统一带上，避免"本地绿、CI 红"。
+ * `--disable-dev-shm-usage` 同理：容器里 /dev/shm 常常只有 64MB，
+ * 不加会在截图时随机崩。
+ */
+const chromeArgs = [
+  '--headless=new',
+  '--disable-gpu',
+  '--no-sandbox',
+  '--disable-dev-shm-usage',
+  '--no-first-run',
+  '--no-default-browser-check',
+  `--user-data-dir=${profileDir}`,
+]
 
 function esc(value) {
   return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
