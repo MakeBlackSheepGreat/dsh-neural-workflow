@@ -117,3 +117,9 @@
 所有改变状态的操作只在工具 `neural_flow` 上（`record` / `experience` /
 `state` / `run`），因为它们必须携带会话身份、过预算、过判定。面板是这同一份
 判定的渲染，不存在旁路。
+
+四个界面共用这一份读面，不新增任何路由：侧栏图标（`sidebar.panellist`）、
+整页看板（`main`）、会话标签（`conversation.view`）、右侧栏页签
+（`sidebar.right.pane.tab` + `.title`）。右侧栏那两处由
+`ctx.sidebarRightTabs.register` 声明 tab 类型后按同一 id 注册；宿主没有该服务时
+整段跳过，不降级、不伪造入口。

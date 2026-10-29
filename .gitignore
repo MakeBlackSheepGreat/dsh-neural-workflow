@@ -1,5 +1,6 @@
 native/target/
 lib/native/
 node_modules/
+.visual/
 *.log
 .DS_Store

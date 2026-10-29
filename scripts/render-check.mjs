@@ -265,6 +265,184 @@ if (typeof internals.Board !== 'function') {
   if (cjk.test(vio)) problems.push(`英文模式下违规卡出现中文诊断句：${vio.slice(0, 160)}`)
 }
 
+/**
+ * 窄宽度排版断言（用户报的那个 bug）。
+ *
+ * 右侧栏只有 300 多像素：横排布局 4 列共 784px 塞不进去，绝对定位的卡片
+ * 被压成几十像素宽，中文逐字换行，看起来就是"竖排单字"。
+ * 这里对布局函数做**数值**断言，而不是看截图——截图会随窗口大小漂移。
+ */
+if (typeof internals.layout !== 'function') {
+  problems.push('render-check 需要 client.js 导出 __test__.layout 才能断言窄宽度排版')
+} else {
+  const narrowWidth = 320
+  const narrow = internals.layout(GRAPH, narrowWidth)
+  if (narrow.orientation !== 'narrow') {
+    problems.push(`容器宽 ${narrowWidth}px 时应选竖排布局，实际 ${narrow.orientation}`)
+  }
+  if (narrow.width > narrowWidth) {
+    problems.push(`竖排布局宽度 ${narrow.width}px 超出容器 ${narrowWidth}px（会横向溢出）`)
+  }
+  if (narrow.nodeWidth < 120) {
+    problems.push(`竖排布局节点卡只有 ${narrow.nodeWidth}px 宽（中文会逐字换行）`)
+  }
+  const seen = new Set()
+  for (const node of GRAPH.nodes) {
+    const position = narrow.positions.get(node.id)
+    if (position === undefined) {
+      problems.push(`竖排布局缺少节点 ${node.id} 的位置`)
+      continue
+    }
+    const key = `${position.x},${position.y}`
+    if (seen.has(key)) problems.push(`竖排布局里节点 ${node.id} 与其它节点重叠（${key}）`)
+    seen.add(key)
+    if (position.x + narrow.nodeWidth > narrow.width) {
+      problems.push(`竖排布局节点 ${node.id} 右边界 ${position.x + narrow.nodeWidth} 超出画布 ${narrow.width}`)
+    }
+  }
+  // 宽容器必须保持原来的横排：这是"整页面板"的形态，不能被窄版规则改坏。
+  const wide = internals.layout(GRAPH, 1200)
+  if (wide.orientation !== 'wide') problems.push(`容器宽 1200px 时应选横排布局，实际 ${wide.orientation}`)
+  if (wide.positions.size !== narrow.positions.size) problems.push('两种布局的节点数量不一致')
+  // 宽版画布不得超出可用宽度：4 列 × 196 写死时是 798px，
+  // 而整页面板主列常常只有 670px，最右两列会被裁掉。
+  for (const budget of [660, 700, 820, 1200]) {
+    const fitted = internals.layout(GRAPH, budget)
+    if (fitted.orientation !== 'wide') continue
+    if (fitted.width > budget) {
+      problems.push(`可用宽 ${budget}px 时画布仍有 ${fitted.width}px（右侧列会被裁掉）`)
+    }
+    for (const node of GRAPH.nodes) {
+      const position = fitted.positions.get(node.id)
+      if (position === undefined) continue
+      if (position.x + fitted.nodeWidth > fitted.width + 1) {
+        problems.push(`可用宽 ${budget}px 时节点 ${node.id} 右边界超出画布`)
+      }
+    }
+    if (fitted.nodeWidth < 112) problems.push(`可用宽 ${budget}px 时节点卡被压到 ${fitted.nodeWidth}px`)
+  }
+  // 竖排丢了列位置，层的分组必须靠层标题补回来。
+  const layerLabels = Array.isArray(narrow.layerLabels) ? narrow.layerLabels : []
+  if (layerLabels.length !== GRAPH.layers.length) {
+    problems.push(`竖排布局应输出 ${GRAPH.layers.length} 个层标题，实际 ${layerLabels.length}`)
+  }
+  // 首帧 / 离线渲染没有可用宽度：必须退回横排，不能抛错。
+  const unknown = internals.layout(GRAPH, null)
+  if (unknown.orientation !== 'wide') problems.push('宽度未知时应回退横排布局')
+}
+
+/**
+ * 窄版 Board 真渲染：用 `width` 覆盖量测（离线没有 ResizeObserver），
+ * 断言层标题与节点都出现、且英文模式下不露中文。
+ */
+if (typeof internals.Board === 'function') {
+  const narrowVerdict = {
+    nodes: { scope: { state: 'satisfied', evidence: 1, failures: 0, kinds: [] } },
+    layers: [{ id: 'L0', satisfied: 1, total: 2 }],
+    violations: [],
+    progress: { satisfied: 1, total: 11 },
+    frontier: ['develop'],
+  }
+  const narrowBoard = render(internals.Board({ graph: GRAPH, verdict: narrowVerdict, t: (key) => key, lang: 'en', width: 320 }))
+  if (cjk.test(narrowBoard)) problems.push(`窄版英文图布出现中文：${narrowBoard.slice(0, 160)}`)
+  for (const layer of GRAPH.layers) {
+    const name = layer.name.en
+    if (!narrowBoard.includes(name)) problems.push(`窄版图布缺少层标题「${name}」`)
+  }
+  for (const node of GRAPH.nodes) {
+    if (!narrowBoard.includes(node.name.en)) problems.push(`窄版图布缺少节点「${node.name.en}」`)
+  }
+}
+
+/**
+ * 断点必须写在 @container 上，不能写在 @media 上。
+ *
+ * 右侧栏是"视口宽、面板窄"，`@media (max-width:980px)` 在桌面永远不成立，
+ * 于是单列规则不生效——这正是窄宽度被压扁的直接成因。这条断言防止回退。
+ */
+const clientSource = readFileSync(join(root, 'lib/client.js'), 'utf8')
+if (!/@container\s+nwpanel/.test(clientSource)) {
+  problems.push('client.js 缺少 @container nwpanel 断点（窄面板下排版不会自适应）')
+}
+if (/@media\s*\(\s*max-width/.test(clientSource)) {
+  problems.push('client.js 仍用 @media (max-width) 做断点：右侧栏里视口不窄、面板窄，该规则不会触发')
+}
+
+/**
+ * 右侧栏入口：与 dsh-context 走同一条两步注册路径。
+ *
+ * 这里用**带 sidebarRightTabs 的 ctx** 再跑一次 apply()，断言：
+ * ① tab 类型被声明；② body 与 title 两个 keyed slot 按同一个 id 注册；
+ * ③ guide 卡片带非空标题与描述（否则右栏"添加工具"里是一张空白卡）。
+ */
+const rightRegistrations = []
+const rightTypes = []
+const rightCtx = {
+  effect: (factory) => factory(),
+  locale: {
+    register: () => () => {},
+    bind: () => (key) => (key === 'view' ? 'Workflow' : key === 'panel' ? 'Neural flow' : key),
+    getLocale: () => ({ active: 'en' }),
+  },
+  slots: {
+    inject: (name, factory) => factory(),
+    register: (meta, component) => {
+      rightRegistrations.push({ meta, component })
+      return () => {}
+    },
+  },
+  inject: (deps, callback) => {
+    if (!Array.isArray(deps) || !deps.includes('sidebarRightTabs')) {
+      problems.push(`右侧栏注册的 inject 依赖不对：${JSON.stringify(deps)}`)
+      return () => {}
+    }
+    return callback({
+      ...rightCtx,
+      sidebarRightTabs: {
+        register: (definition) => {
+          rightTypes.push(definition)
+          return () => {}
+        },
+      },
+    })
+  },
+}
+moduleExports.apply(rightCtx)
+
+if (rightTypes.length !== 1) {
+  problems.push(`预期声明 1 个右侧栏 tab 类型，实际 ${rightTypes.length}`)
+} else {
+  const type = rightTypes[0]
+  if (typeof type.id !== 'string' || type.id === '') problems.push('右侧栏 tab 类型缺少 id')
+  if (type.kind !== type.id) problems.push('右侧栏 tab 类型的 kind 应与 id 一致（guide 按 kind 打开）')
+  if (typeof type.title !== 'function' || type.title() === '') problems.push('右侧栏 tab 标题为空（页签无字）')
+  const guide = Array.isArray(type.guide) ? type.guide : []
+  if (guide.length === 0) problems.push('右侧栏 tab 类型没有 guide 卡片（添加工具里找不到入口）')
+  for (const entry of guide) {
+    if (typeof entry.title !== 'function' || entry.title() === '') problems.push('右侧栏 guide 卡片标题为空')
+    if (typeof entry.description !== 'function' || entry.description() === '') problems.push('右侧栏 guide 卡片描述为空')
+    if (typeof entry.icon !== 'function') problems.push('右侧栏 guide 卡片缺少图标')
+    else if (render(entry.icon({ size: 16 })) === '') problems.push('右侧栏 guide 卡片图标渲染为空')
+  }
+}
+const rightSlots = rightRegistrations.map((item) => item.meta.name)
+for (const expected of ['sidebar.right.pane.tab', 'sidebar.right.pane.tab.title']) {
+  if (!rightSlots.includes(expected)) problems.push(`右侧栏缺少 ${expected} 注册`)
+}
+const PANEL_ID_RIGHT = rightTypes.length > 0 ? rightTypes[0].id : 'neural-workflow'
+for (const { meta, component } of rightRegistrations) {
+  // 同一份 apply() 也会注册左侧那三个 slot，这里只断言右侧栏的两条。
+  if (typeof meta.name !== 'string' || !meta.name.startsWith('sidebar.right.')) continue
+  if (meta.key !== PANEL_ID_RIGHT) problems.push(`${meta.name} 的 key 应为 ${PANEL_ID_RIGHT}，实际 ${meta.key}`)
+  try {
+    const output = render(component({ size: 16, sessionId: 'test-session' }))
+    if (output === '') problems.push(`右侧栏 ${meta.name} 渲染出空内容`)
+    if (cjk.test(output)) problems.push(`英文模式下右侧栏 ${meta.name} 渲染出中文：${output.slice(0, 120)}`)
+  } catch (error) {
+    problems.push(`右侧栏 ${meta.name} 渲染抛错：${error?.message ?? error}`)
+  }
+}
+
 if (problems.length > 0) {
   for (const problem of problems) console.error(`render-check: ${problem}`)
   process.exit(1)

@@ -63,7 +63,7 @@ L3 表达与交付   figure → polish → submit
 打分刻意可解释：标题命中记 3，正文命中记 1，整短语出现在标题再 +2，最后按严重度乘权
 （`critical` 3、`major` 2）。零分条目直接丢弃，不返回"看起来相关"的噪声。
 
-### 5. 三个界面
+### 5. 四个界面
 
 位置与 dsh-context 完全对齐（同一批 slot、相邻 order）：
 
@@ -72,8 +72,16 @@ L3 表达与交付   figure → polish → submit
 | 侧栏图标 | `sidebar.panellist`（order 25） | 与 插件 / 自动化任务 / 上下文洞察 并列 |
 | 整页看板 | `main` | 阶段图、层进度、违规、账本、经验检索 |
 | 会话标签 | `conversation.view`（order 25） | 同一块看板绑定当前会话 |
+| 右侧栏标签页 | `sidebar.right.pane.tab` + `.title` | 同一块看板跟在聊天旁边，从右栏的卡片打开 |
 
-样式只吃主题 token（`--dsw-alias-*`），浅色深色都成立。
+右侧栏入口走的是 dsh-context 用的同一条公开两步路径：`ctx.sidebarRightTabs.register({ id, kind, title, guide })`
+声明 tab 类型，再由 `sidebar.right.pane.tab` / `sidebar.right.pane.tab.title` 用同一个 id 提供正文与页签标题。
+宿主没有 `sidebarRightTabs` 时整段跳过，其余三个界面不受影响。
+
+样式只吃主题 token（`--dsw-alias-*`），浅色深色都成立。排版按**容器**宽度而非视口宽度：
+右侧栏在宽窗口里只有 300 多像素，`@media (max-width)` 在那里永远不触发。所以断点写成
+`@container nwpanel`，图布用 `ResizeObserver` 量自己的容器，窄于 620px 时从「一层一列」
+切成「一层一行」——节点卡保持满宽，不会塌成中文逐字换行。
 
 ### 6. 运行时上下文
 
@@ -86,6 +94,7 @@ L3 表达与交付   figure → polish → submit
 | **面板图标**（`sidebar.panellist`） | 与 插件 / 自动化任务 / 上下文洞察 并列的一个入口，点开整页看板。 |
 | **看板页**（`main`） | 阶段图（节点状态实时）、层完成度条、违规清单、证据账本。 |
 | **工作流标签页**（`conversation.view`） | 同一块看板绑定到当前会话，与 聊天 / 轨迹 / 上下文 并列。 |
+| **右侧栏标签页**（`sidebar.right.pane.tab`） | 同一块看板跟在聊天右侧；从右栏的「添加工具」卡片里选「神经工作流」打开。窄宽度自动切成竖排，不会压扁卡片。 |
 | **`neural_flow` 工具** | 模型用它在工作流上落证据（`node` + `kind` + 可选 `anchors[].path`）。中间件在**落账之前**判定，被拒时回填具体是哪条约束拦下的。 |
 | **运行时上下文** | 一个 `systemPrompt` 段落陈述当前前沿与未通过的约束，模型由此知道下一步该做什么。 |
 
@@ -122,7 +131,7 @@ dsh plugin --profile desktop add /absolute/path/to/dsh-neural-workflow
 graph/neural-paper-workflow.json   阶段图（数据——改这里，不改代码）
 native/                            Rust 中间件：唯一的约束解释器
 lib/index.js                       宿主半：投影、工具、提示词段落、HTTP 路由
-lib/client.js                      浏览器半：侧栏图标、整页、会话视图、经验检索
+lib/client.js                      浏览器半：侧栏图标、整页、会话视图、右侧栏页签、经验检索
 lib/fold.js                        唯一的权威折账（纯函数）
 lib/kb.js                          经验检索（纯函数，打分可解释）
 scripts/build-kb.mjs               skill 知识图谱 → lib/kb-data.js + lib/kb-full.js
@@ -146,8 +155,11 @@ node scripts/build.mjs --check      # 图自洽、lib/graph-data.js 是最新的
 node scripts/build-kb.mjs --check   # 经验索引与 skill 同步
 node scripts/check.mjs              # 语法、bundle 形状、slot 名、manifest
 node scripts/render-check.mjs       # 每个注册组件都能渲染且不抛错
-node --test tests/*.test.mjs        # 折账确定性 + 中间件契约（17 项）
+node scripts/visual-check.mjs       # 真 CSS 进无头 Chrome：不裁切、卡片不被压扁
+node --test tests/*.test.mjs        # 折账确定性、词表、执行器、经验生命周期、项目状态
 ```
+
+`npm run check` 跑前五条，`npm test` 跑最后一条。
 
 ## 许可
 

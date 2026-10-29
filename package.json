@@ -1,6 +1,6 @@
 {
   "name": "dsh-neural-workflow",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Neural-network research workflow constraints for DeepSeek Harness: a stage graph, an evidence ledger folded from the session log, and a Rust middleware that blocks out-of-order progress.",
   "type": "module",
   "license": "Apache-2.0",
@@ -25,11 +25,12 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs && node scripts/build-kb.mjs",
-    "check": "node scripts/build.mjs --check && node scripts/build-kb.mjs --check && node scripts/check-release.mjs --check && node scripts/check.mjs && node scripts/render-check.mjs",
+    "check": "node scripts/build.mjs --check && node scripts/build-kb.mjs --check && node scripts/check-release.mjs --check && node scripts/check.mjs && node scripts/render-check.mjs && node scripts/visual-check.mjs",
     "test": "node --test tests/*.test.mjs",
     "native": "bash native/build.sh",
     "kb": "node scripts/build-kb.mjs",
-    "baseline": "node scripts/check-release.mjs --snapshot"
+    "baseline": "node scripts/check-release.mjs --snapshot",
+    "visual": "node scripts/visual-check.mjs"
   },
   "keywords": [
     "dsh",

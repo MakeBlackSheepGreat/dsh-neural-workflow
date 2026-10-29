@@ -63,7 +63,7 @@ Two-step retrieval, matching how the skill's own engine works:
 
 Scoring is deliberate and explainable: title hits weigh 3, body hits 1, full-phrase-in-title +2, multiplied by severity (`critical` 3, `major` 2). Zero-score entries are dropped rather than returned as "maybe relevant" noise.
 
-### 5. Three UI surfaces
+### 5. Four UI surfaces
 
 Placed exactly where dsh-context puts its own — same slots, adjacent order:
 
@@ -72,8 +72,20 @@ Placed exactly where dsh-context puts its own — same slots, adjacent order:
 | Sidebar icon | `sidebar.panellist` (order 25) | Entry beside Plugins / Automation / Context Insights |
 | Board page | `main` | Stage graph, layer bars, violations, ledger, lesson search |
 | Session tab | `conversation.view` (order 25) | The same board bound to the current session |
+| Right sidebar tab | `sidebar.right.pane.tab` + `.title` | The same board beside the chat, opened from the right Sidebar's guide card |
 
-Styling uses only theme tokens (`--dsw-alias-*`), so light and dark both work.
+The right sidebar entry registers through the same public two-stage path dsh-context uses:
+`ctx.sidebarRightTabs.register({ id, kind, title, guide })` declares the tab type, then
+`sidebar.right.pane.tab` / `sidebar.right.pane.tab.title` supply its body and chip under that
+same id. A harness without `sidebarRightTabs` skips the block entirely; the other three
+surfaces are unaffected.
+
+Styling uses only theme tokens (`--dsw-alias-*`), so light and dark both work. Layout is
+**container-driven, not viewport-driven**: the right sidebar is ~300px wide inside a wide
+window, so `@media (max-width)` never fires there. Breakpoints are `@container nwpanel`,
+the graph measures its own container through `ResizeObserver`, and below 620px it switches
+from one-layer-per-column to one-layer-per-row so node cards keep the full width instead of
+collapsing into per-character CJK wrapping.
 
 ### 6. Runtime context
 
@@ -127,7 +139,7 @@ around the invariant, and a second path is how invariants die.
 graph/neural-paper-workflow.json   the stage graph (data — edit this, not the code)
 native/                            Rust middleware: the ONLY constraint interpreter
 lib/index.js                       host: projection, tool, prompt section, HTTP routes
-lib/client.js                      browser: sidebar icon, page, session view, lesson search
+lib/client.js                      browser: sidebar icon, page, session view, right-bar tab, lesson search
 lib/fold.js                        the single authoritative ledger fold (pure)
 lib/experience.js                  per-project experience ledger (trust ladder, feedback, recurrence)
 lib/executor.js                    dispatch plan, budget stop conditions, anchor checks
@@ -167,8 +179,11 @@ node scripts/build.mjs --check       # graph consistent, lib/graph-data.js curre
 node scripts/build-kb.mjs --check    # lesson index current with the skill
 node scripts/check.mjs               # syntax, bundle shape, slot names, manifest
 node scripts/render-check.mjs        # every registered component renders without throwing
-node --test tests/*.test.mjs         # fold determinism + middleware contract (17 tests)
+node scripts/visual-check.mjs        # real CSS in headless Chrome: no clipping, no collapsed cards
+node --test tests/*.test.mjs         # fold determinism, vocabulary, executor, experience, project state
 ```
+
+`npm run check` runs the first five; `npm test` runs the last.
 
 ## License
 

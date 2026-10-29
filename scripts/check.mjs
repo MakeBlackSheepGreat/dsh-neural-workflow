@@ -51,8 +51,11 @@ const hostEntry = readFileSync(join(root, 'lib/index.js'), 'utf8')
 if (!/export const name = 'neural-workflow'/.test(hostEntry)) fail("lib/index.js 的 name 必须是 'neural-workflow'")
 
 // ── 3. slot 名字：只允许 inspect 里真实存在的那几个 ────────────────────────
+// 左侧三处由 ctx 直接注册；右侧栏两处由 ctx.inject(['sidebarRightTabs']) 的
+// scoped ctx 注册（服务缺席时整体跳过），所以分开统计。
 const KNOWN_SLOTS = new Set(['sidebar.panellist', 'main', 'conversation.view'])
-for (const slot of KNOWN_SLOTS) {
+const KNOWN_RIGHT_SLOTS = new Set(['sidebar.right.pane.tab', 'sidebar.right.pane.tab.title'])
+for (const slot of [...KNOWN_SLOTS, ...KNOWN_RIGHT_SLOTS]) {
   if (!client.includes(`'${slot}'`)) notes.push(`客户端未注册 ${slot}`)
 }
 const declared = [...client.matchAll(/ctx\.slots\.inject\('([^']+)'/g)].map((match) => match[1])
@@ -62,12 +65,27 @@ for (const slot of declared) {
 if (declared.length !== KNOWN_SLOTS.size) {
   fail(`客户端 slot 注入数量 ${declared.length}，预期 ${KNOWN_SLOTS.size}`)
 }
+const declaredRight = [...client.matchAll(/scoped\.slots\.inject\('([^']+)'/g)].map((match) => match[1])
+for (const slot of declaredRight) {
+  if (!KNOWN_RIGHT_SLOTS.has(slot)) fail(`客户端注入了未知右侧栏 slot: ${slot}`)
+}
+if (declaredRight.length !== KNOWN_RIGHT_SLOTS.size) {
+  fail(`右侧栏 slot 注入数量 ${declaredRight.length}，预期 ${KNOWN_RIGHT_SLOTS.size}`)
+}
+// 右侧栏 tab 类型必须先于两个 slot 声明：没有类型就没有 key 被派发，body 永不渲染。
+if (!/sidebarRightTabs/.test(client)) fail('客户端没有声明右侧栏 tab 类型（sidebarRightTabs）')
 
 // ── 4. manifest ───────────────────────────────────────────────────────────
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 if (pkg.main !== 'lib/index.js') fail('package.json main 应为 lib/index.js')
 if (!existsSync(join(root, 'cordis.patch.yml'))) fail('缺少 cordis.patch.yml')
 if (pkg?.dsh?.bundle?.patch !== './cordis.patch.yml') fail('package.json dsh.bundle.patch 指向错误')
+// 两份 manifest 的版本必须一致：profile 用 file:/link 依赖时按版本号判断是否重装，
+// 版本号落后会让"改了却没生效"这种问题看起来像代码 bug。
+const manifest = JSON.parse(readFileSync(join(root, 'dsh-plugin.json'), 'utf8'))
+if (manifest.version !== pkg.version) {
+  fail(`dsh-plugin.json 版本 ${manifest.version} 与 package.json 版本 ${pkg.version} 不一致`)
+}
 for (const key of ['lib', 'locale', 'icon.svg']) {
   if (!(pkg.files ?? []).includes(key)) fail(`package.json files 缺少 ${key}`)
 }
