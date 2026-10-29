@@ -30,6 +30,8 @@ let factory
 globalThis.window = { __ModuleLoader__: { load(definition) { factory = definition.factory } } }
 globalThis.document = { querySelector: () => null, createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } }
 globalThis.fetch = () => Promise.resolve({ ok: false, json: () => Promise.resolve(null) })
+// 蛛网图的数据从 host 的 kb-graph 模块取真值（不是手写样例）。
+const { graph: kbGraphData } = await import('../lib/kb-graph.js')
 
 const reactStub = {
   createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
@@ -181,6 +183,9 @@ const verdict = {
   frontier: ['train'],
 }
 
+// 用 host 的真图算出真布局，再交给 WebView 同步渲染（不走 Web 的 fetch）。
+const WEB_LAYOUT = internals.webLayout(kbGraphData())
+
 const RUNS = [
   { id: 'run-2', node: 'train', status: 'ok', startedAt: '2026-10-29T02:10:00.000Z', finishedAt: '2026-10-29T02:14:00.000Z' },
   { id: 'run-1', node: 'scope', status: 'failed', startedAt: '2026-10-29T01:50:00.000Z', finishedAt: '2026-10-29T01:52:00.000Z' },
@@ -229,6 +234,16 @@ body{margin:0;font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif;back
  * 造一页 HTML。`canvasWidth` 为 null 时图布位置放一个占位 div，
  * 用于第一趟量宽度；给了数字才真正渲染 Board。
  */
+// Web 组件自己 fetch 结构；这里让它拿到真数据。
+globalThis.fetch = (url) =>
+  Promise.resolve({
+    ok: true,
+    json: () =>
+      Promise.resolve(
+        String(url).includes('/knowledge') ? { ok: true, graph: kbGraphData() } : { ok: false },
+      ),
+  })
+
 function buildHtml(stageWidth, canvasWidth) {
   const board =
     canvasWidth === null
@@ -281,6 +296,14 @@ function buildHtml(stageWidth, canvasWidth) {
             reactStub.createElement('div', { className: 'nw-card' }, internals.Violations({ verdict, t, lang: 'zh', constraints: [] })),
             reactStub.createElement('div', { className: 'nw-card' }, internals.LayerBars({ graph: GRAPH, verdict, t, lang: 'zh' })),
             reactStub.createElement('div', { className: 'nw-card' }, internals.Runs({ runs: RUNS, error: undefined, t, lang: 'zh' })),
+            reactStub.createElement(
+              'div',
+              { className: 'nw-card' },
+              reactStub.createElement('div', { className: 'nw-card-h' }, reactStub.createElement('h3', { className: 'nw-card-t' }, '经验库')),
+              // 直接渲染 WebView + 真布局：Web 自己 fetch，而桩里 useEffect 是空函数，
+              // 只测 Web 会永远停在"加载中"那一帧（假通过）。
+              internals.WebView({ t, lang: 'zh', layout: WEB_LAYOUT, error: undefined, onOpen: () => {} }),
+            ),
           ),
         ),
       ),
