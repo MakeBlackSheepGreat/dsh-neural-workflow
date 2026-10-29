@@ -107,7 +107,20 @@ A failed application demotes `derived` back to `candidate`; canonical only keeps
 
 `docs/schema-baseline.json` + `scripts/check-release.mjs` freeze the shapes others depend on — graph nodes/kinds, wire ops and error codes, evidence fields, accepted kinds — and fail the build when they drift.
 
+### 12. Read-only UI, tool-only operations
+
+The panel **visualises**; it never mutates. There is no write route and no action
+button: dispatch, evidence recording, feedback, promotion and claim linking all
+go through the `neural_flow` tool, because they must pass the verdict, the budget
+and the session identity — and all three live on the Agent side. The panel reads
+the same verdict the tool produced, so it can never show a state that bypassed
+the gate.
+
+This is clearAI's discipline kept intact: a UI write entry would be a second path
+around the invariant, and a second path is how invariants die.
+
 ## Architecture
+
 
 
 ```

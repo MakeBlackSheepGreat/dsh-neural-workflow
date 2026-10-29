@@ -108,3 +108,12 @@
 → {"ok":true,"nodes":{"train":{"state":"blocked","evidence":0,"failures":1}}}
 ```
 
+
+## 9. 读面与写面
+
+**HTTP 路由全部只读**（`graph` / `state` / `knowledge` / `experience` / `plan` /
+`selftest`）——它们只回答"现在是什么"，不改变任何状态。
+
+所有改变状态的操作只在工具 `neural_flow` 上（`record` / `experience` /
+`state` / `run`），因为它们必须携带会话身份、过预算、过判定。面板是这同一份
+判定的渲染，不存在旁路。
