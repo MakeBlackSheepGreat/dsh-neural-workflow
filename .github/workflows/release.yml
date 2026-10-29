@@ -89,9 +89,15 @@ jobs:
       - name: pack
         run: |
           set -euo pipefail
+          # 用**确定的**文件名，不用 `ls *.tgz | head -1`：
+          # 那个写法会在工作目录里有旧包时选到旧文件（实测踩过：
+          # 一个被误提交的 0.6.0.tgz 让 0.7.0 的 release 去校验旧包）。
+          VERSION=$(node -p "require('./package.json').version")
+          TGZ="./dsh-neural-workflow-${VERSION}.tgz"
+          rm -f ./*.tgz
           npm pack
-          ls -l ./*.tgz
-          TGZ=$(ls ./*.tgz | head -1)
+          test -f "$TGZ" || { echo "::error::没有生成 $TGZ"; ls -l ./*.tgz || true; exit 1; }
+          ls -l "$TGZ"
           echo "TGZ=$TGZ" >> "$GITHUB_ENV"
           echo "tarball: $TGZ"
 

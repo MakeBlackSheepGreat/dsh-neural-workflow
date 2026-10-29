@@ -4,3 +4,5 @@ node_modules/
 .visual/
 *.log
 .DS_Store
+# 发版产物：npm pack 生成，绝不入库（否则 release 的 ls *.tgz 会选到旧包）
+*.tgz
