@@ -16,7 +16,14 @@ import { test } from 'node:test'
 import { DETECTOR_IDS, FORMAT_CAPABILITIES, auditFigure, formatOf, resolveSkillDir } from '../lib/figure.js'
 
 /** 用来跑真检测器的样例图（skill 仓里的 figure-kit）。 */
-const SKILL_HOME = 'C:/Users/876762330/Desktop/projects'
+/**
+ * 检测器所在的 skill 仓位置。
+ *
+ * 抽样图只用于"真跑检测器"的那几条测试；它在 CI 上不存在时那些测试会 skip，
+ * 这是设计——CI 拿不到那个私有仓。但**不依赖它的测试必须能在任何平台跑**，
+ * 上面「目录而不是文件」那条为此改用了 tmpdir()。
+ */
+const SKILL_HOME = process.env.NEURAL_PAPER_SKILL_TEST_HOME ?? 'C:/Users/876762330/Desktop/projects'
 const SAMPLE = join(SKILL_HOME, 'Neural_Paper_Skill', 'skills', 'neural-paper-workflow', 'assets', 'templates', 'figure-kit', 'out', 'figure_kit_example.drawio')
 const hasSample = existsSync(SAMPLE)
 
@@ -53,9 +60,18 @@ test('文件不存在：ERROR，且不执行任何检测器', async () => {
 })
 
 test('目录而不是文件：ERROR', async () => {
-  const report = await auditFigure(SKILL_HOME, { home: SKILL_HOME })
+  // 必须用**确实存在**的目录，否则会先命中"文件不存在"分支，测不到这一层。
+  // 之前这里传的是 Windows 绝对路径，在 Linux CI 上不存在，于是断言错位——
+  // 代码没问题，是测试自己有平台依赖。
+  const report = await auditFigure(tmpdir(), { home: SKILL_HOME })
   assert.equal(report.status, 'ERROR')
   assert.equal(report.checks[0].id, 'not_a_file')
+})
+
+test('SKILL_HOME 只用于定位检测器，不应假定它存在', () => {
+  // 这条断言保护上一条的教训：测试不许假定某个绝对路径存在。
+  // 本例只要求格式推断不依赖文件系统。
+  assert.equal(formatOf('x.drawio'), 'drawio')
 })
 
 test('找不到检测器目录：必须报未执行，不许当成通过', async () => {
