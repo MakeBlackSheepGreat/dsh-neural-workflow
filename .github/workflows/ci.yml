@@ -1,0 +1,222 @@
+name: ci
+
+# 触发：任意分支的 push、所有 PR、以及手动派发。
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新推送取消旧的运行：CI 只关心最新一次的结果。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 知识库的源在**另一个仓库**里（scripts/build-kb.mjs 默认找 ../Neural_Paper_Skill）。
+  # 固定到具体 SHA：跟着 main 走会让本仓 CI 因为兄弟仓的一次提交突然变红。
+  # 这个 SHA 产出的 611 条与仓库里已提交的 lib/kb-data.js 一致。
+  SKILL_REPO: https://github.com/MakeBlackSheepGreat/Neural_Paper_Skill.git
+  SKILL_SHA: 51b4cd002bb52f6c61fcf311af840291cda51e9b
+
+jobs:
+  check:
+    name: check (node 22 / chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 仓库没有 package-lock.json（也就没有 `npm ci` 需要的依据），
+      # 所以这里用 `npm install`。不要加 `npm ci`：没有锁文件时它会直接失败。
+      - name: install dependencies
+        run: npm install --no-audit --no-fund
+
+      # 真实 Chrome 二进制。不用 apt 的 chromium-browser：Ubuntu 24.04 上它是个
+      # snap 包装器，在 runner 里常常起不来。setup-chrome 直接给一个可执行文件。
+      # install-dependencies 装上 Chrome 需要的系统库（干净 runner 上没有）。
+      - name: install chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          install-dependencies: true
+
+      - name: expose chrome to visual-check
+        run: |
+          set -euo pipefail
+          CHROME="${{ steps.chrome.outputs.chrome-path }}"
+          if [ -z "$CHROME" ] || [ ! -x "$CHROME" ]; then
+            echo "::error::setup-chrome 没有给出可执行的 chrome-path（得到 '$CHROME'）"
+            exit 1
+          fi
+          echo "DSH_CHROME_PATH=$CHROME" >> "$GITHUB_ENV"
+          "$CHROME" --version
+
+      # build-kb.mjs 需要知识库源；干净的 runner 上没有兄弟仓，必须显式拉。
+      # 用 NEURAL_PAPER_SKILL 指过去（脚本原生支持这个变量），而不是伪造目录布局。
+      # 不拉的话 `npm run check` 会在 build-kb 这一步抛「找不到知识图谱目录」。
+      - name: fetch skill knowledge base
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none "$SKILL_REPO" "$RUNNER_TEMP/skill"
+          git -C "$RUNNER_TEMP/skill" checkout -q "$SKILL_SHA"
+          echo "checked out $(git -C "$RUNNER_TEMP/skill" rev-parse HEAD)"
+          SKILL_DIR="$RUNNER_TEMP/skill/skills/neural-paper-workflow"
+          test -d "$SKILL_DIR/knowledge/graph" || { echo "::error::知识图谱目录不存在：$SKILL_DIR"; exit 1; }
+          echo "knowledge graph entries: $(ls "$SKILL_DIR/knowledge/graph" | wc -l)"
+          echo "NEURAL_PAPER_SKILL=$SKILL_DIR" >> "$GITHUB_ENV"
+
+      # 先构建中间件，`npm test` 里的 6 条协议集成测试才不会因为缺二进制被跳过。
+      # 跳过 = 假绿：那 6 条正是"宿主怎么调、中间件怎么答"的契约证明。
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: build native middleware
+        run: cargo build --release --manifest-path native/Cargo.toml
+
+      # 把二进制搬进 lib/native/。不搬的话 `build.mjs --check` 会打印
+      # 「lib/native/... 缺失」——虽然它并不因此失败，但那行错误会让日志骗人。
+      - name: stage native binary
+        run: node scripts/build.mjs
+
+      - name: check
+        run: npm run check
+
+      - name: test
+        run: npm test
+
+      - name: upload visual artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-check
+          path: |
+            .visual
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-logs
+          path: |
+            .visual
+            npm-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  native:
+    name: native (cargo build + selftest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # 包名见 native/Cargo.toml：name = "nw-constrain"，bin 同名。
+      - name: build
+        run: cargo build --release --manifest-path native/Cargo.toml
+
+      - name: verify binary
+        run: |
+          set -euo pipefail
+          BIN="native/target/release/nw-constrain"
+          test -x "$BIN" || { echo "::error::没有生成 $BIN"; exit 1; }
+          file "$BIN"
+
+      # selftest 走 PROTOCOL.md §6 的行 JSON 协议：无 input，value = {checks, failed}。
+      # 进程本身总是退出 0，所以必须解析 JSON 才能判断真的通过——只看退出码是假绿。
+      - name: selftest
+        run: |
+          set -euo pipefail
+          BIN="native/target/release/nw-constrain"
+          OUT=$(printf '%s\n' '{"id":"1","op":"selftest"}' | "$BIN")
+          echo "response: $OUT"
+          OUT="$OUT" node -e '
+            const payload = JSON.parse(process.env.OUT)
+            if (payload.id !== "1") throw new Error(`id 没有回显：${JSON.stringify(payload)}`)
+            if (payload.ok !== true) throw new Error(`selftest 返回 ok != true：${JSON.stringify(payload)}`)
+            const value = payload.value ?? {}
+            if (!Number.isInteger(value.checks) || value.checks <= 0) {
+              throw new Error(`checks 不是正整数：${JSON.stringify(payload)}`)
+            }
+            if (Array.isArray(value.failed) && value.failed.length > 0) {
+              throw new Error(`selftest 有失败项：${JSON.stringify(value.failed)}`)
+            }
+            console.log(`selftest OK: ${value.checks} checks, 0 failed`)
+          '
+
+      - name: upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: nw-constrain-linux-x64
+          path: native/target/release/nw-constrain
+          retention-days: 7
+
+  package:
+    name: package (npm pack dry-run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: install dependencies
+        run: npm install --no-audit --no-fund
+
+      # `files` 白名单是发行契约：漏掉一项，装进 profile 之后就是运行期报错。
+      # 这里既看 npm 自己算出的清单，也逐项断言白名单里的东西真的在包内。
+      - name: verify package contents
+        run: |
+          set -euo pipefail
+          # 报告落在工作目录里（相对路径），不依赖 /tmp 在各平台的解析方式。
+          npm pack --dry-run --json > .pack-report.json
+          node -e '
+            const fs = require("node:fs")
+            const [report] = JSON.parse(fs.readFileSync(".pack-report.json", "utf8"))
+            const files = report.files.map((entry) => entry.path)
+            console.log(`tarball: ${report.filename} (${files.length} files)`)
+            for (const path of files) console.log(`  ${path}`)
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"))
+            const problems = []
+            for (const required of pkg.files) {
+              // 目录项要求至少有一个文件落在它下面；文件项要求精确命中。
+              const hit = files.some((path) => path === required || path.startsWith(`${required}/`))
+              if (!hit) problems.push(`files 白名单里的 ${required} 不在包内`)
+            }
+            for (const required of ["lib/index.js", "dsh-plugin.json", "icon.svg"]) {
+              if (!files.includes(required)) problems.push(`缺少必要文件 ${required}`)
+            }
+            if (files.some((path) => path.startsWith("tests/") || path.startsWith("graph/"))) {
+              problems.push("包内混入了不该发布的源目录（tests/ 或 graph/）")
+            }
+            if (problems.length > 0) {
+              for (const problem of problems) console.error(`package: ${problem}`)
+              process.exit(1)
+            }
+            console.log("package: 白名单校验通过")
+          '
+
+      - name: upload tarball
+        run: |
+          set -euo pipefail
+          npm pack
+          ls -l ./*.tgz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: ./*.tgz
+          retention-days: 7

@@ -1,0 +1,127 @@
+name: release
+
+# 只由版本 tag 触发。tag 是发布的唯一入口：分支 push 只跑 ci.yml。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # softprops/action-gh-release 需要写 Release
+
+env:
+  SKILL_REPO: https://github.com/MakeBlackSheepGreat/Neural_Paper_Skill.git
+  SKILL_SHA: 51b4cd002bb52f6c61fcf311af840291cda51e9b
+
+jobs:
+  release:
+    name: verify + pack + release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 需要 tag 对象本身
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # tag 与 package.json 版本不一致是最常见的发版事故：tag 打了 v0.6.0，
+      # 包里还是 0.5.0，装上去按版本号判断"没变"于是不重装。
+      - name: verify tag matches package.json version
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          MANIFEST_VERSION=$(node -p "require('./dsh-plugin.json').version")
+          EXPECTED="v${PKG_VERSION}"
+          echo "tag=$TAG package.json=$PKG_VERSION dsh-plugin.json=$MANIFEST_VERSION"
+          if [ "$TAG" != "$EXPECTED" ]; then
+            echo "::error::tag '$TAG' 与 package.json version '$PKG_VERSION' 不一致（应为 '$EXPECTED'）"
+            exit 1
+          fi
+          if [ "$MANIFEST_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::dsh-plugin.json version '$MANIFEST_VERSION' 与 package.json '$PKG_VERSION' 不一致"
+            exit 1
+          fi
+
+      - name: install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: install chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          install-dependencies: true
+
+      - name: expose chrome to visual-check
+        run: |
+          set -euo pipefail
+          CHROME="${{ steps.chrome.outputs.chrome-path }}"
+          if [ -z "$CHROME" ] || [ ! -x "$CHROME" ]; then
+            echo "::error::setup-chrome 没有给出可执行的 chrome-path（得到 '$CHROME'）"
+            exit 1
+          fi
+          echo "DSH_CHROME_PATH=$CHROME" >> "$GITHUB_ENV"
+          "$CHROME" --version
+
+      - name: fetch skill knowledge base
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none "$SKILL_REPO" "$RUNNER_TEMP/skill"
+          git -C "$RUNNER_TEMP/skill" checkout -q "$SKILL_SHA"
+          echo "checked out $(git -C "$RUNNER_TEMP/skill" rev-parse HEAD)"
+          SKILL_DIR="$RUNNER_TEMP/skill/skills/neural-paper-workflow"
+          test -d "$SKILL_DIR/knowledge/graph" || { echo "::error::知识图谱目录不存在：$SKILL_DIR"; exit 1; }
+          echo "NEURAL_PAPER_SKILL=$SKILL_DIR" >> "$GITHUB_ENV"
+
+      - name: build native middleware
+        run: cargo build --release --manifest-path native/Cargo.toml
+
+      - name: stage native binary
+        run: node scripts/build.mjs
+
+      - name: check
+        run: npm run check
+
+      - name: test
+        run: npm test
+
+      # 发版物必须带 Linux 二进制，否则装到 Linux 上的 profile 会退化成只读。
+      - name: pack
+        run: |
+          set -euo pipefail
+          npm pack
+          ls -l ./*.tgz
+          TGZ=$(ls ./*.tgz | head -1)
+          echo "TGZ=$TGZ" >> "$GITHUB_ENV"
+          echo "tarball: $TGZ"
+
+      - name: verify tarball contains native binary
+        run: |
+          set -euo pipefail
+          tar -tzf "$TGZ" | grep -qx 'package/lib/native/nw-constrain' \
+            || { echo "::error::tarball 里没有 package/lib/native/nw-constrain"; exit 1; }
+
+      # 没有 NPM_TOKEN，所以不发布到 npm：只把 tgz 挂到 GitHub Release。
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.TGZ }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      - name: upload release logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-logs
+          path: |
+            .visual
+            npm-debug.log
+            ./*.tgz
+          if-no-files-found: ignore
+          retention-days: 7

@@ -16,7 +16,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -46,14 +46,76 @@ const internals = factory((id) => (id === 'react' ? reactStub : { jsx: reactStub
 const cssStart = source.indexOf('const CSS = `') + 'const CSS = `'.length
 const css = source.slice(cssStart, source.indexOf('`\n\n    /**', cssStart))
 
-const chrome = [
-  'C:/Users/876762330/AppData/Local/ms-playwright/chromium-1248/chrome-win64/chrome.exe',
-  'C:/Users/876762330/AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe',
-].find((candidate) => existsSync(candidate))
-if (chrome === undefined) {
-  console.error('visual-check: 找不到无头 Chrome（ms-playwright 目录下没有 chrome.exe）')
+/**
+ * 找 Chrome：优先环境变量，其次平台默认路径，最后 PATH。
+ *
+ * 为什么不能写死路径：CI（Linux）上没有 ms-playwright 目录，写死等于必挂；
+ * 而"找不到就跳过"更糟——跳过让 CI 假绿，视觉回归从此不再保护任何东西。
+ * 所以这里找不到就**明确报错并退出 1**，由 CI 负责把浏览器装好。
+ *
+ * 顺序：DSH_CHROME_PATH → PUPPETEER_EXECUTABLE_PATH → 平台默认 → PATH。
+ */
+function findChrome() {
+  const fromEnv = ['DSH_CHROME_PATH', 'PUPPETEER_EXECUTABLE_PATH']
+  for (const name of fromEnv) {
+    const value = process.env[name]
+    if (typeof value === 'string' && value.trim() !== '') {
+      const candidate = value.trim()
+      if (existsSync(candidate)) return { path: candidate, via: name }
+      throw new Error(`${name} 指向的 Chrome 不存在：${candidate}`)
+    }
+  }
+
+  const defaults = [
+    // Windows：ms-playwright 下载的 Chromium（版本号会变，按新→旧试）。
+    'C:/Users/876762330/AppData/Local/ms-playwright/chromium-1248/chrome-win64/chrome.exe',
+    'C:/Users/876762330/AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe',
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    // Linux：CI 上 apt 装的 chromium 通常落在 /usr/bin。
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    // macOS。
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  ]
+  for (const candidate of defaults) {
+    if (existsSync(candidate)) return { path: candidate, via: '平台默认路径' }
+  }
+
+  const names = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']
+  const dirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = join(dir, name)
+      if (existsSync(candidate)) return { path: candidate, via: 'PATH' }
+    }
+  }
+  return undefined
+}
+
+const found = (() => {
+  try {
+    return findChrome()
+  } catch (error) {
+    console.error(`visual-check: ${error.message}`)
+    process.exit(1)
+  }
+})()
+if (found === undefined) {
+  console.error(
+    [
+      'visual-check: 找不到无头 Chrome。',
+      '请设置 DSH_CHROME_PATH（或 PUPPETEER_EXECUTABLE_PATH）指向 Chrome/Chromium 可执行文件，',
+      '或安装到平台默认位置（Linux: /usr/bin/chromium 或 /usr/bin/google-chrome）。',
+      '这一项不做静默跳过：跳过等于 CI 假绿。',
+    ].join('\n'),
+  )
   process.exit(1)
 }
+const chrome = found.path
+
 const profileDir = join(outDir, '.chrome-profile')
 const chromeArgs = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profileDir}`]
 
@@ -102,6 +164,11 @@ const verdict = {
   frontier: ['train'],
 }
 
+const RUNS = [
+  { id: 'run-2', node: 'train', status: 'ok', startedAt: '2026-10-29T02:10:00.000Z', finishedAt: '2026-10-29T02:14:00.000Z' },
+  { id: 'run-1', node: 'scope', status: 'failed', startedAt: '2026-10-29T01:50:00.000Z', finishedAt: '2026-10-29T01:52:00.000Z' },
+]
+
 const DICT = {
   title: '神经网络工作流',
   panel: '神经工作流',
@@ -118,6 +185,23 @@ const DICT = {
   evidence: '条证据',
   dualGate: '双门',
   anchors: '锚点',
+  anchor: '锚点',
+  stages: '个阶段',
+  expandAll: '全部展开',
+  collapseAll: '全部收起',
+  collapse: '收起',
+  gate: '门',
+  gateCommands: '校验命令',
+  needsAnchor: '需要锚点',
+  noAnchor: '无需锚点',
+  viewList: '列表',
+  viewGraph: '图',
+  runs: '阶段运行',
+  runsNone: '还没有派发过阶段。',
+  runsUnavailable: '运行登记不可用',
+  runOk: '完成',
+  runFailed: '失败',
+  runRunning: '运行中',
 }
 const t = (key) => DICT[key] ?? key
 
@@ -179,6 +263,7 @@ function buildHtml(stageWidth, canvasWidth) {
             null,
             reactStub.createElement('div', { className: 'nw-card' }, internals.Violations({ verdict, t, lang: 'zh', constraints: [] })),
             reactStub.createElement('div', { className: 'nw-card' }, internals.LayerBars({ graph: GRAPH, verdict, t, lang: 'zh' })),
+            reactStub.createElement('div', { className: 'nw-card' }, internals.Runs({ runs: RUNS, error: undefined, t, lang: 'zh' })),
           ),
         ),
       ),
@@ -199,7 +284,12 @@ const panel = document.querySelector('.nw-panel')
 const measure = document.getElementById('measure')
 const scroll = document.querySelector('.nw-canvas-scroll')
 const canvas = document.querySelector('.nw-canvas')
-const cards = [...document.querySelectorAll('.nw-node')]
+const rows = [...document.querySelectorAll('.nw-list-row')]
+const nodes = [...document.querySelectorAll('.nw-node')]
+// 两种视图都要认：窄容器默认列表、宽容器默认图。只数一种会把"另一个视图
+// 正常渲染"误报成"一个节点都没画"。
+const cards = nodes.length > 0 ? nodes : rows
+const view = nodes.length > 0 ? 'graph' : rows.length > 0 ? 'list' : 'none'
 const widths = cards.map((card) => Math.round(card.getBoundingClientRect().width))
 const names = cards.map((card) => {
   const name = card.querySelector('.nw-node-name')
@@ -222,8 +312,39 @@ document.title = 'PROBE ' + JSON.stringify({
   minCard: widths.length > 0 ? Math.min(...widths) : null,
   maxCard: widths.length > 0 ? Math.max(...widths) : null,
   cards: widths.length,
+  view,
   // 中文逐字换行的直接证据：单行字高约 16px，两行以上说明被压窄了。
   maxNameHeight: names.length > 0 && names.every((n) => n !== null) ? Math.max(...names) : null,
+  /**
+   * 卡片内容是否溢出卡片本体。
+   *
+   * 这是漏过一次的检查：收起高度写死 96px 时，figure 的两个证据徽章换行后
+   * 把 note 顶到了卡片外，看起来像徽章挂在边框上——而"卡片宽度、画布溢出"
+   * 这几条全都通过。所以必须直接量内容盒与卡片盒的关系。
+   */
+  cardOverflow: nodes.map((card) => {
+    const body = card.querySelector('.nw-node-hit')
+    if (body === null) return null
+    return Math.round(body.scrollHeight - card.clientHeight)
+  }),
+  // 列表行同理：行内容不得溢出行的边框。
+  rowOverflow: rows.map((row) => Math.round(row.scrollHeight - row.clientHeight)),
+  // 卡片之间是否重叠：同一层的相邻卡片最容易叠。
+  cardOverlaps: (() => {
+    const rects = cards.map((card) => {
+      const r = card.getBoundingClientRect()
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+    })
+    let hits = 0
+    for (let i = 0; i < rects.length; i += 1) {
+      for (let j = i + 1; j < rects.length; j += 1) {
+        const a = rects[i]
+        const b = rects[j]
+        if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) hits += 1
+      }
+    }
+    return hits
+  })(),
 })
 </script>`
 
@@ -285,6 +406,22 @@ for (const item of cases) {
   if (data.scrollW !== null && data.scrollClient !== null && data.scrollW > data.scrollClient + 1) {
     problems.push(`${item.name}: 画布内容 ${data.scrollW}px 溢出可视区 ${data.scrollClient}px（最右的列会被裁掉）`)
   }
+  // 卡片内容不得溢出卡片本体。收起高度写死时 `figure` 的两个徽章换行会把
+  // `note` 顶到卡片外，而上面几条全都通过——所以这一条必须单独量。
+  for (const [index, overflow] of (data.cardOverflow ?? []).entries()) {
+    if (overflow !== null && overflow > 1) {
+      problems.push(`${item.name}: 第 ${index + 1} 张卡片内容溢出 ${overflow}px（徽章被顶到卡片外）`)
+    }
+  }
+  if (typeof data.cardOverlaps === 'number' && data.cardOverlaps > 0) {
+    problems.push(`${item.name}: 有 ${data.cardOverlaps} 对卡片相互重叠`)
+  }
+  for (const [index, overflow] of (data.rowOverflow ?? []).entries()) {
+    if (overflow > 1) problems.push(`${item.name}: 第 ${index + 1} 行列表内容溢出 ${overflow}px`)
+  }
+  // 视图选择必须按容器宽度走：窄容器给列表、宽容器给图。
+  if (available < 620 && data.view !== 'list') problems.push(`${item.name}: 窄容器应默认列表视图，实际 ${data.view}`)
+  if (available >= 620 && data.view !== 'graph') problems.push(`${item.name}: 宽容器应默认图视图，实际 ${data.view}`)
 }
 
 if (problems.length > 0) {
